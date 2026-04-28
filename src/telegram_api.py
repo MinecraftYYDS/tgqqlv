@@ -44,8 +44,11 @@ class TelegramAPI:
         result = self._call("getUpdates", payload, timeout=request_timeout)
         return result if isinstance(result, list) else []
 
-    def send_message(self, chat_id: int, text: str) -> None:
-        self._call("sendMessage", {"chat_id": chat_id, "text": text})
+    def send_message(self, chat_id: int, text: str, reply_to_message_id: int | None = None) -> None:
+        payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
+        if reply_to_message_id is not None:
+            payload["reply_to_message_id"] = reply_to_message_id
+        self._call("sendMessage", payload)
 
     def get_chat_member(self, chat_id: int, user_id: int) -> dict[str, Any]:
         result = self._call("getChatMember", {"chat_id": chat_id, "user_id": user_id})

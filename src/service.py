@@ -56,19 +56,20 @@ class XpService:
         chat_type = str((message.get("chat") or {}).get("type", ""))
         from_user = message.get("from") or {}
         caller_id = int(from_user.get("id", 0)) if from_user.get("id") else 0
+        reply_to_message_id = int(message.get("message_id", 0)) if message.get("message_id") else None
 
         if cmd == "/setlvtag":
-            self._handle_setlvtag(chat_id, chat_type, caller_id, text)
+            self._handle_setlvtag(chat_id, chat_type, caller_id, text, reply_to_message_id)
             return
 
         if cmd == "/my":
             if chat_type not in {"group", "supergroup"}:
-                self._tg.send_message(chat_id, "请在群内使用 /my。")
+                self._tg.send_message(chat_id, "请在群内使用 /my。", reply_to_message_id=reply_to_message_id)
                 return
             if caller_id <= 0:
                 return
             output = self._render_my(chat_id, caller_id)
-            self._tg.send_message(chat_id, output)
+            self._tg.send_message(chat_id, output, reply_to_message_id=reply_to_message_id)
             return
 
         if cmd == "/rank":
@@ -77,7 +78,7 @@ class XpService:
             if caller_id <= 0:
                 return
             output = self._render_rank(chat_id, caller_id)
-            self._tg.send_message(chat_id, output)
+            self._tg.send_message(chat_id, output, reply_to_message_id=reply_to_message_id)
 
     def _render_rank(self, chat_id: int, caller_id: int) -> str:
         rows = self._db.rank_top_n(chat_id, self._top_n)
@@ -166,7 +167,14 @@ class XpService:
         empty = max(0, width - filled)
         return "[" + ("#" * filled) + ("-" * empty) + "]"
 
-    def _handle_setlvtag(self, chat_id: int, chat_type: str, caller_id: int, text: str) -> None:
+    def _handle_setlvtag(
+        self,
+        chat_id: int,
+        chat_type: str,
+        caller_id: int,
+        text: str,
+        reply_to_message_id: int | None,
+    ) -> None:
         if caller_id <= 0:
             return
 
@@ -175,25 +183,38 @@ class XpService:
             self._tg.send_message(
                 chat_id,
                 "格式错误。示例: /setlvtag 1-10 [新手] 11-20 [进阶]",
+                reply_to_message_id=reply_to_message_id,
             )
             return
 
         target_chat_id = chat_id
         if chat_type == "private":
             if self._owner_id is None or caller_id != self._owner_id:
-                self._tg.send_message(chat_id, "私聊设置需要 OWNER_ID 且仅限机器人所有者。")
+                self._tg.send_message(
+                    chat_id,
+                    "私聊设置需要 OWNER_ID 且仅限机器人所有者。",
+                    reply_to_message_id=reply_to_message_id,
+                )
                 return
             target_chat_id = 0
         elif chat_type in {"group", "supergroup"}:
             try:
                 member = self._tg.get_chat_member(chat_id, caller_id)
             except TelegramAPIError:
-                self._tg.send_message(chat_id, "无法校验管理员权限，请稍后再试。")
+                self._tg.send_message(
+                    chat_id,
+                    "无法校验管理员权限，请稍后再试。",
+                    reply_to_message_id=reply_to_message_id,
+                )
                 return
 
             status = str(member.get("status", ""))
             if status not in {"creator", "administrator"}:
-                self._tg.send_message(chat_id, "仅群管理员可设置等级头衔。")
+                self._tg.send_message(
+                    chat_id,
+                    "仅群管理员可设置等级头衔。",
+                    reply_to_message_id=reply_to_message_id,
+                )
                 return
         else:
             return
@@ -209,7 +230,11 @@ class XpService:
             )
 
         scope_text = "全局默认" if target_chat_id == 0 else "当前群"
-        self._tg.send_message(chat_id, f"已更新{scope_text}等级头衔，共 {len(rules)} 条。")
+        self._tg.send_message(
+            chat_id,
+            f"已更新{scope_text}等级头衔，共 {len(rules)} 条。",
+            reply_to_message_id=reply_to_message_id,
+        )
 
     def _parse_setlvtag_rules(self, text: str) -> list[tuple[int, int, str]]:
         body = text.split(" ", 1)
