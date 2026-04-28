@@ -58,6 +58,15 @@ class RulesTests(unittest.TestCase):
         invalid = service._parse_setlvtag_rules("/setlvtag 1-10 新手")
         self.assertEqual(invalid, [])
 
+    def test_progress_bar_render(self) -> None:
+        db = DB(":memory:")
+        db.init_schema()
+        service = XpService(db=db, tg=Mock(), top_n=10)
+
+        self.assertEqual(service._progress_bar(0.0, width=10), "[----------]")
+        self.assertEqual(service._progress_bar(0.5, width=10), "[#####-----]")
+        self.assertEqual(service._progress_bar(1.0, width=10), "[##########]")
+
 
 if __name__ == "__main__":
     unittest.main()

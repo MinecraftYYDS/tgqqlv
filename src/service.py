@@ -11,6 +11,7 @@ from .rules import (
     calc_tier_progress,
     is_system_level_tag,
     level_from_total_xp,
+    required_total_xp_for_level,
     should_award_streak_bonus,
 )
 from .telegram_api import TelegramAPI, TelegramAPIError
@@ -60,6 +61,16 @@ class XpService:
             self._handle_setlvtag(chat_id, chat_type, caller_id, text)
             return
 
+        if cmd == "/my":
+            if chat_type not in {"group", "supergroup"}:
+                self._tg.send_message(chat_id, "请在群内使用 /my。")
+                return
+            if caller_id <= 0:
+                return
+            output = self._render_my(chat_id, caller_id)
+            self._tg.send_message(chat_id, output)
+            return
+
         if cmd == "/rank":
             if chat_type not in {"group", "supergroup"}:
                 return
@@ -104,6 +115,56 @@ class XpService:
                 lines.append(f"你的排名: {rank}. {name} | {level_part} | {xp} XP")
 
         return "\n".join(lines)
+
+    def _render_my(self, chat_id: int, user_id: int) -> str:
+        user = self._db.get_user(chat_id, user_id)
+        if not user:
+            return "你在本群还没有活跃记录。"
+
+        current_level = int(user.level)
+        current_xp = int(user.total_xp)
+
+        title = self._db.find_level_title(chat_id, current_level)
+        level_part = f"Lv.{current_level}"
+        if title:
+            level_part = f"Lv.{current_level} | [{title}]"
+
+        if current_level >= 114:
+            bar = self._progress_bar(1.0)
+            return "\n".join(
+                [
+                    "个人信息",
+                    f"等级: {level_part}",
+                    f"当前XP: {current_xp}",
+                    "距离下一级: 已满级",
+                    f"进度: {bar} 100%",
+                ]
+            )
+
+        level_floor_xp = required_total_xp_for_level(current_level)
+        next_level_xp = required_total_xp_for_level(current_level + 1)
+        span = max(1, next_level_xp - level_floor_xp)
+        done = max(0, current_xp - level_floor_xp)
+        ratio = min(1.0, max(0.0, done / span))
+        remain = max(0, next_level_xp - current_xp)
+        percent = int(round(ratio * 100))
+        bar = self._progress_bar(ratio)
+
+        return "\n".join(
+            [
+                "个人信息",
+                f"等级: {level_part}",
+                f"当前XP: {current_xp}",
+                f"距离下一级: {remain} XP",
+                f"进度: {bar} {percent}%",
+            ]
+        )
+
+    def _progress_bar(self, ratio: float, width: int = 20) -> str:
+        bounded = min(1.0, max(0.0, ratio))
+        filled = int(round(width * bounded))
+        empty = max(0, width - filled)
+        return "[" + ("#" * filled) + ("-" * empty) + "]"
 
     def _handle_setlvtag(self, chat_id: int, chat_type: str, caller_id: int, text: str) -> None:
         if caller_id <= 0:
