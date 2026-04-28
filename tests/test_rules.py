@@ -5,9 +5,11 @@ from unittest.mock import Mock
 
 from src.db import DB
 from src.rules import (
+    DAILY_EFFECTIVE_XP_AT_10_MSG,
+    STREAK_BONUS_XP,
+    STREAK_PERIOD_DAYS,
     build_level_tag,
     calc_tier_progress,
-    full_active_xp_per_day,
     is_system_level_tag,
     level_from_total_xp,
     required_total_xp_for_level,
@@ -37,13 +39,13 @@ class RulesTests(unittest.TestCase):
             self.assertGreaterEqual(resolved, level)
 
     def test_level_pace_targets(self) -> None:
-        daily = full_active_xp_per_day()
-        xp10 = required_total_xp_for_level(10)
-        xp20 = required_total_xp_for_level(20)
+        # Daily effective 10 messages => +3 XP/day, plus 7-day streak bonus +5.
+        # Lv.10 target: 15 days; Lv.20 target: 20 days.
+        xp_15_days = 15 * DAILY_EFFECTIVE_XP_AT_10_MSG + (15 // STREAK_PERIOD_DAYS) * STREAK_BONUS_XP
+        xp_20_days = 20 * DAILY_EFFECTIVE_XP_AT_10_MSG + (20 // STREAK_PERIOD_DAYS) * STREAK_BONUS_XP
 
-        # Requested pacing: Lv10 in ~15 days, Lv20 in ~20 days.
-        self.assertEqual(xp10, int((15 * daily) + 0.999999))
-        self.assertEqual(xp20, int((20 * daily) + 0.999999))
+        self.assertEqual(required_total_xp_for_level(10), xp_15_days)
+        self.assertEqual(required_total_xp_for_level(20), xp_20_days)
 
     def test_streak_bonus(self) -> None:
         self.assertFalse(should_award_streak_bonus(6))

@@ -7,24 +7,13 @@ TIER_THRESHOLDS = (1, 5, 10, 50, 100)
 TIER_REWARDS = (1, 2, 3, 4, 5)
 MAX_LEVEL = 114
 MIN_LEVEL = 1
-MAX_DAILY_XP = 5
-STREAK_BONUS_XP = 5
+
+# Rebalanced pace target:
+# daily effective messages = 10
+# Lv.10 ~= 15 days, Lv.20 ~= 20 days, and so on.
+DAILY_EFFECTIVE_XP_AT_10_MSG = 3
 STREAK_PERIOD_DAYS = 7
-
-
-def full_active_xp_per_day() -> float:
-    # Full active assumption:
-    # - Daily tier max: +5 XP
-    # - Streak bonus average: +5 / 7 XP per day
-    return MAX_DAILY_XP + (STREAK_BONUS_XP / STREAK_PERIOD_DAYS)
-
-
-def target_days_for_level(level: int) -> float:
-    # User requested pace:
-    # Lv.10 -> 15 days, Lv.20 -> 20 days, and so on.
-    # This implies +5 days per +10 levels.
-    bounded = max(MIN_LEVEL, min(MAX_LEVEL, level))
-    return 10.0 + (bounded / 2.0)
+STREAK_BONUS_XP = 5
 
 
 @dataclass(frozen=True)
@@ -62,28 +51,31 @@ def calc_tier_progress(old_count: int, new_count: int, prev_highest_index: int) 
 
 
 def required_total_xp_for_level(level: int) -> int:
-    days = target_days_for_level(level)
-    return int(math.ceil(days * full_active_xp_per_day()))
+    bounded = max(MIN_LEVEL, min(MAX_LEVEL, level))
+    if bounded <= MIN_LEVEL:
+        return 0
+
+    # Days target: Lv.10 -> 15 days, Lv.20 -> 20 days, linear by level.
+    days_target = 10.0 + 0.5 * bounded
+    base_xp = int(days_target * DAILY_EFFECTIVE_XP_AT_10_MSG)
+    streak_bonus = int(days_target // STREAK_PERIOD_DAYS) * STREAK_BONUS_XP
+    return base_xp + streak_bonus
 
 
 def level_from_total_xp(total_xp: int) -> int:
     if total_xp <= 0:
         return MIN_LEVEL
 
-    low = MIN_LEVEL
-    high = MAX_LEVEL
-    ans = MIN_LEVEL
-
-    while low <= high:
-        mid = (low + high) // 2
-        need = required_total_xp_for_level(mid)
-        if need <= total_xp:
-            ans = mid
-            low = mid + 1
+    # Monotonic search over the current level curve.
+    lo = MIN_LEVEL
+    hi = MAX_LEVEL
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if required_total_xp_for_level(mid) <= total_xp:
+            lo = mid
         else:
-            high = mid - 1
-
-    return ans
+            hi = mid - 1
+    return lo
 
 
 def should_award_streak_bonus(streak_days: int) -> bool:
