@@ -7,6 +7,24 @@ TIER_THRESHOLDS = (1, 5, 10, 50, 100)
 TIER_REWARDS = (1, 2, 3, 4, 5)
 MAX_LEVEL = 114
 MIN_LEVEL = 1
+MAX_DAILY_XP = 5
+STREAK_BONUS_XP = 5
+STREAK_PERIOD_DAYS = 7
+
+
+def full_active_xp_per_day() -> float:
+    # Full active assumption:
+    # - Daily tier max: +5 XP
+    # - Streak bonus average: +5 / 7 XP per day
+    return MAX_DAILY_XP + (STREAK_BONUS_XP / STREAK_PERIOD_DAYS)
+
+
+def target_days_for_level(level: int) -> float:
+    # User requested pace:
+    # Lv.10 -> 15 days, Lv.20 -> 20 days, and so on.
+    # This implies +5 days per +10 levels.
+    bounded = max(MIN_LEVEL, min(MAX_LEVEL, level))
+    return 10.0 + (bounded / 2.0)
 
 
 @dataclass(frozen=True)
@@ -44,31 +62,28 @@ def calc_tier_progress(old_count: int, new_count: int, prev_highest_index: int) 
 
 
 def required_total_xp_for_level(level: int) -> int:
-    bounded = max(MIN_LEVEL, min(MAX_LEVEL, level))
-    return math.floor(0.2 * bounded * bounded + 18 * bounded)
+    days = target_days_for_level(level)
+    return int(math.ceil(days * full_active_xp_per_day()))
 
 
 def level_from_total_xp(total_xp: int) -> int:
     if total_xp <= 0:
         return MIN_LEVEL
 
-    # Solve 0.2L^2 + 18L - xp <= 0 for maximum integer L.
-    # 0.2 = 1/5 => L^2 + 90L - 5*xp <= 0
-    a = 1.0
-    b = 90.0
-    c = -5.0 * float(total_xp)
-    d = b * b - 4 * a * c
-    root = (-b + math.sqrt(d)) / (2 * a)
-    lv = int(math.floor(root))
-    lv = max(MIN_LEVEL, min(MAX_LEVEL, lv))
+    low = MIN_LEVEL
+    high = MAX_LEVEL
+    ans = MIN_LEVEL
 
-    # Correct floating-point edge cases near exact thresholds.
-    while lv < MAX_LEVEL and required_total_xp_for_level(lv + 1) <= total_xp:
-        lv += 1
-    while lv > MIN_LEVEL and required_total_xp_for_level(lv) > total_xp:
-        lv -= 1
+    while low <= high:
+        mid = (low + high) // 2
+        need = required_total_xp_for_level(mid)
+        if need <= total_xp:
+            ans = mid
+            low = mid + 1
+        else:
+            high = mid - 1
 
-    return lv
+    return ans
 
 
 def should_award_streak_bonus(streak_days: int) -> bool:

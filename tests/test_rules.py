@@ -7,6 +7,7 @@ from src.db import DB
 from src.rules import (
     build_level_tag,
     calc_tier_progress,
+    full_active_xp_per_day,
     is_system_level_tag,
     level_from_total_xp,
     required_total_xp_for_level,
@@ -34,6 +35,15 @@ class RulesTests(unittest.TestCase):
             xp = required_total_xp_for_level(level)
             resolved = level_from_total_xp(xp)
             self.assertGreaterEqual(resolved, level)
+
+    def test_level_pace_targets(self) -> None:
+        daily = full_active_xp_per_day()
+        xp10 = required_total_xp_for_level(10)
+        xp20 = required_total_xp_for_level(20)
+
+        # Requested pacing: Lv10 in ~15 days, Lv20 in ~20 days.
+        self.assertEqual(xp10, int((15 * daily) + 0.999999))
+        self.assertEqual(xp20, int((20 * daily) + 0.999999))
 
     def test_streak_bonus(self) -> None:
         self.assertFalse(should_award_streak_bonus(6))
