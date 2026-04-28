@@ -16,11 +16,19 @@ class TelegramAPI:
         self._base = f"https://api.telegram.org/bot{token}"
         self._session = requests.Session()
 
-    def _call(self, method: str, payload: dict[str, Any] | None = None) -> Any:
+    def _call(
+        self,
+        method: str,
+        payload: dict[str, Any] | None = None,
+        timeout: float | tuple[float, float] = 20,
+    ) -> Any:
         url = f"{self._base}/{method}"
-        response = self._session.post(url, json=payload or {}, timeout=20)
-        response.raise_for_status()
-        body = response.json()
+        try:
+            response = self._session.post(url, json=payload or {}, timeout=timeout)
+            response.raise_for_status()
+            body = response.json()
+        except requests.RequestException as exc:
+            raise TelegramAPIError(f"{method} request failed: {exc}") from exc
         if not body.get("ok"):
             description = body.get("description", "Unknown Telegram API error")
             error_code = body.get("error_code")
@@ -31,7 +39,9 @@ class TelegramAPI:
         payload: dict[str, Any] = {"timeout": timeout, "allowed_updates": ["message"]}
         if offset is not None:
             payload["offset"] = offset
-        result = self._call("getUpdates", payload)
+        # Long polling timeout on Telegram side should be smaller than HTTP read timeout.
+        request_timeout = (10.0, float(max(timeout + 10, 30)))
+        result = self._call("getUpdates", payload, timeout=request_timeout)
         return result if isinstance(result, list) else []
 
     def send_message(self, chat_id: int, text: str) -> None:
