@@ -195,8 +195,9 @@ class XpService:
         user = self._db.get_or_create_user(chat_id, user_id, username, display_name, now_ts)
         daily = self._db.get_or_create_daily(chat_id, user_id, biz_date)
 
-        # 5-second merge: multiple messages in 5 seconds count as 1.
+        # 5-second merge only affects XP counting, not tag self-healing.
         if daily.last_counted_ts > 0 and now_ts - daily.last_counted_ts < 5:
+            self._sync_level_tag(chat_id, user_id, user.level)
             return
 
         old_count = daily.msg_count
@@ -270,11 +271,8 @@ class XpService:
                 if not user:
                     return
 
-        # Tag sync conditions:
-        # 1) Level up
-        # 2) User previously had special tag, so we check if it was removed and recover Lv.X
-        if leveled_up or bool(user.had_special_tag):
-            self._sync_level_tag(chat_id, user_id, user.level)
+        # On any valid user speech, ensure missing/system level tags are healed.
+        self._sync_level_tag(chat_id, user_id, user.level)
 
     def _sync_level_tag(self, chat_id: int, user_id: int, level: int) -> None:
         now_ts = epoch_seconds()
