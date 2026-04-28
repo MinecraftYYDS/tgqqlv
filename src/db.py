@@ -16,6 +16,7 @@ class UserState:
     streak_days: int
     last_qualified_date: str | None
     had_special_tag: int
+    level_tag_synced_once: int
 
 
 @dataclass
@@ -57,6 +58,7 @@ class DB:
                 streak_days INTEGER NOT NULL DEFAULT 0,
                 last_qualified_date TEXT,
                 had_special_tag INTEGER NOT NULL DEFAULT 0,
+                level_tag_synced_once INTEGER NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 PRIMARY KEY(chat_id, user_id)
@@ -98,7 +100,15 @@ class DB:
             CREATE INDEX IF NOT EXISTS idx_lvtag_chat_range ON level_title_rules(chat_id, start_level, end_level);
             """
         )
+        self._ensure_users_column("level_tag_synced_once", "INTEGER NOT NULL DEFAULT 0")
         self._conn.commit()
+
+    def _ensure_users_column(self, column_name: str, definition_sql: str) -> None:
+        cols = self._conn.execute("PRAGMA table_info(users)").fetchall()
+        existing = {str(row[1]) for row in cols}
+        if column_name in existing:
+            return
+        self._conn.execute(f"ALTER TABLE users ADD COLUMN {column_name} {definition_sql}")
 
     def upsert_level_title_rule(
         self,
@@ -260,6 +270,17 @@ class DB:
         )
         self._conn.commit()
 
+    def mark_level_tag_synced_once(self, chat_id: int, user_id: int, synced: bool, now_ts: int) -> None:
+        self._conn.execute(
+            """
+            UPDATE users
+            SET level_tag_synced_once=?, updated_at=?
+            WHERE chat_id=? AND user_id=?
+            """,
+            (1 if synced else 0, now_ts, chat_id, user_id),
+        )
+        self._conn.commit()
+
     def get_user(self, chat_id: int, user_id: int) -> UserState | None:
         row = self._conn.execute(
             "SELECT * FROM users WHERE chat_id=? AND user_id=?",
@@ -309,6 +330,7 @@ class DB:
             streak_days=int(row["streak_days"]),
             last_qualified_date=row["last_qualified_date"],
             had_special_tag=int(row["had_special_tag"]),
+            level_tag_synced_once=int(row["level_tag_synced_once"]),
         )
 
     def _row_to_daily(self, row: sqlite3.Row) -> DailyState:

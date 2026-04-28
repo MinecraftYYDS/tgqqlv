@@ -195,9 +195,10 @@ class XpService:
         user = self._db.get_or_create_user(chat_id, user_id, username, display_name, now_ts)
         daily = self._db.get_or_create_daily(chat_id, user_id, biz_date)
 
-        # 5-second merge only affects XP counting, not tag self-healing.
+        # 5-second merge only affects XP counting.
         if daily.last_counted_ts > 0 and now_ts - daily.last_counted_ts < 5:
-            self._sync_level_tag(chat_id, user_id, user.level)
+            if not bool(user.level_tag_synced_once):
+                self._sync_level_tag(chat_id, user_id, user.level)
             return
 
         old_count = daily.msg_count
@@ -271,8 +272,9 @@ class XpService:
                 if not user:
                     return
 
-        # On any valid user speech, ensure missing/system level tags are healed.
-        self._sync_level_tag(chat_id, user_id, user.level)
+        # Once synced once for a user, skip all future checks.
+        if not bool(user.level_tag_synced_once):
+            self._sync_level_tag(chat_id, user_id, user.level)
 
     def _sync_level_tag(self, chat_id: int, user_id: int, level: int) -> None:
         now_ts = epoch_seconds()
@@ -297,11 +299,13 @@ class XpService:
 
         target_tag = build_level_tag(level)
         if current_tag == target_tag:
+            self._db.mark_level_tag_synced_once(chat_id, user_id, True, now_ts)
             self._db.mark_had_special_tag(chat_id, user_id, False, now_ts)
             return
 
         try:
             self._tg.set_chat_member_tag(chat_id, user_id, target_tag)
+            self._db.mark_level_tag_synced_once(chat_id, user_id, True, now_ts)
             self._db.mark_had_special_tag(chat_id, user_id, False, now_ts)
         except (TelegramAPIError, ValueError) as exc:
             self._logger.warning("setChatMemberTag failed for %s/%s: %s", chat_id, user_id, exc)
