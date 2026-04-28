@@ -16,16 +16,18 @@ class ConfigTests(unittest.TestCase):
 
         try:
             with tempfile.TemporaryDirectory() as td:
-                os.chdir(td)
-                Path(".env").write_text("BOT_TOKEN=123456:ABCDEF\nTOP_N=20\n", encoding="utf-8")
+                try:
+                    os.chdir(td)
+                    Path(".env").write_text("BOT_TOKEN=123456:ABCDEF\nTOP_N=20\n", encoding="utf-8")
 
-                config._DOTENV_LOADED = False
-                settings = config.load_settings()
+                    config._DOTENV_LOADED = False
+                    settings = config.load_settings()
 
-                self.assertEqual(settings.bot_token, "123456:ABCDEF")
-                self.assertEqual(settings.top_n, 20)
+                    self.assertEqual(settings.bot_token, "123456:ABCDEF")
+                    self.assertEqual(settings.top_n, 20)
+                finally:
+                    os.chdir(cwd)
         finally:
-            os.chdir(cwd)
             config._DOTENV_LOADED = old_loaded
             if old_token is not None:
                 os.environ["BOT_TOKEN"] = old_token
