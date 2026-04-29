@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from datetime import datetime
 from typing import Any
 
-from .db import DB, row_to_display_name
+from .db import DB
 from .rules import (
     build_level_tag,
     calc_tier_progress,
@@ -56,7 +57,8 @@ class XpService:
         chat_type = str((message.get("chat") or {}).get("type", ""))
         from_user = message.get("from") or {}
         caller_id = int(from_user.get("id", 0)) if from_user.get("id") else 0
-        reply_to_message_id = int(message.get("message_id", 0)) if message.get("message_id") else None
+        command_message_id = int(message.get("message_id", 0)) if message.get("message_id") else None
+        reply_to_message_id = command_message_id
 
         if cmd == "/setlvtag":
             self._handle_setlvtag(chat_id, chat_type, caller_id, text, reply_to_message_id)
@@ -74,7 +76,8 @@ class XpService:
                 self._db.refresh_level(chat_id, caller_id, correct_level, epoch_seconds())
                 self._sync_level_tag(chat_id, caller_id, correct_level)
             output = self._render_my(chat_id, caller_id)
-            self._tg.send_message(chat_id, output, reply_to_message_id=reply_to_message_id)
+            sent = self._tg.send_message(chat_id, output, reply_to_message_id=reply_to_message_id)
+            self._schedule_cleanup(chat_id, command_message_id, self._message_id_from_result(sent))
             return
 
         if cmd == "/rank":
@@ -83,7 +86,8 @@ class XpService:
             if caller_id <= 0:
                 return
             output = self._render_rank(chat_id, caller_id)
-            self._tg.send_message(chat_id, output, reply_to_message_id=reply_to_message_id)
+            sent = self._tg.send_message(chat_id, output, reply_to_message_id=reply_to_message_id)
+            self._schedule_cleanup(chat_id, command_message_id, self._message_id_from_result(sent))
 
     def _render_rank(self, chat_id: int, caller_id: int) -> str:
         rows = self._db.rank_top_n(chat_id, self._top_n)
@@ -95,7 +99,7 @@ class XpService:
         for row in rows:
             rank = int(row["rank"])
             uid = int(row["user_id"])
-            name = row_to_display_name(row)
+            name = self._rank_username(row)
             level = int(row["level"])
             xp = int(row["total_xp"])
             title = self._db.find_level_title(chat_id, level)
@@ -111,7 +115,7 @@ class XpService:
             if self_row:
                 lines.append("---")
                 rank = int(self_row["rank"])
-                name = row_to_display_name(self_row)
+                name = self._rank_username(self_row)
                 level = int(self_row["level"])
                 xp = int(self_row["total_xp"])
                 title = self._db.find_level_title(chat_id, level)
@@ -121,6 +125,36 @@ class XpService:
                 lines.append(f"你的排名: {rank}. {name} | {level_part} | {xp} XP")
 
         return "\n".join(lines)
+
+    def _rank_username(self, row: Any) -> str:
+        username = row["username"]
+        if isinstance(username, str) and username.strip():
+            return username.strip()
+        user_id = int(row["user_id"])
+        return f"user_{user_id}"
+
+    def _message_id_from_result(self, sent: dict[str, Any]) -> int | None:
+        mid = sent.get("message_id")
+        if isinstance(mid, int) and mid > 0:
+            return mid
+        return None
+
+    def _schedule_cleanup(self, chat_id: int, command_message_id: int | None, reply_message_id: int | None) -> None:
+        self._schedule_delete(chat_id, command_message_id)
+        self._schedule_delete(chat_id, reply_message_id)
+
+    def _schedule_delete(self, chat_id: int, message_id: int | None) -> None:
+        if message_id is None:
+            return
+        timer = threading.Timer(10.0, self._delete_message_safe, args=(chat_id, message_id))
+        timer.daemon = True
+        timer.start()
+
+    def _delete_message_safe(self, chat_id: int, message_id: int) -> None:
+        try:
+            self._tg.delete_message(chat_id, message_id)
+        except TelegramAPIError as exc:
+            self._logger.warning("deleteMessage failed for %s/%s: %s", chat_id, message_id, exc)
 
     def _render_my(self, chat_id: int, user_id: int) -> str:
         user = self._db.get_user(chat_id, user_id)

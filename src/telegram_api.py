@@ -44,11 +44,12 @@ class TelegramAPI:
         result = self._call("getUpdates", payload, timeout=request_timeout)
         return result if isinstance(result, list) else []
 
-    def send_message(self, chat_id: int, text: str, reply_to_message_id: int | None = None) -> None:
+    def send_message(self, chat_id: int, text: str, reply_to_message_id: int | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
         if reply_to_message_id is not None:
             payload["reply_to_message_id"] = reply_to_message_id
-        self._call("sendMessage", payload)
+        result = self._call("sendMessage", payload)
+        return result if isinstance(result, dict) else {}
 
     def get_chat_member(self, chat_id: int, user_id: int) -> dict[str, Any]:
         result = self._call("getChatMember", {"chat_id": chat_id, "user_id": user_id})
@@ -59,4 +60,8 @@ class TelegramAPI:
         if len(tag) > 16:
             raise ValueError("tag length must be <= 16")
         result = self._call("setChatMemberTag", {"chat_id": chat_id, "user_id": user_id, "tag": tag})
+        return bool(result)
+
+    def delete_message(self, chat_id: int, message_id: int) -> bool:
+        result = self._call("deleteMessage", {"chat_id": chat_id, "message_id": message_id})
         return bool(result)
