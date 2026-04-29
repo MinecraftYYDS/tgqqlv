@@ -281,6 +281,17 @@ class DB:
         )
         self._conn.commit()
 
+    def refresh_level(self, chat_id: int, user_id: int, new_level: int, now_ts: int) -> None:
+        """Update stored level to new_level if it changed (does not modify XP)."""
+        self._conn.execute(
+            """
+            UPDATE users SET level=?, updated_at=?
+            WHERE chat_id=? AND user_id=? AND level != ?
+            """,
+            (new_level, now_ts, chat_id, user_id, new_level),
+        )
+        self._conn.commit()
+
     def get_user(self, chat_id: int, user_id: int) -> UserState | None:
         row = self._conn.execute(
             "SELECT * FROM users WHERE chat_id=? AND user_id=?",

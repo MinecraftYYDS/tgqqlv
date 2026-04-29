@@ -70,7 +70,9 @@ class XpService:
                 return
             user = self._db.get_user(chat_id, caller_id)
             if user:
-                self._sync_level_tag(chat_id, caller_id, user.level)
+                correct_level = level_from_total_xp(user.total_xp)
+                self._db.refresh_level(chat_id, caller_id, correct_level, epoch_seconds())
+                self._sync_level_tag(chat_id, caller_id, correct_level)
             output = self._render_my(chat_id, caller_id)
             self._tg.send_message(chat_id, output, reply_to_message_id=reply_to_message_id)
             return
