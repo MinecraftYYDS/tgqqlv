@@ -39,13 +39,12 @@ class RulesTests(unittest.TestCase):
             self.assertGreaterEqual(resolved, level)
 
     def test_level_pace_targets(self) -> None:
-        # Daily effective 10 messages => +3 XP/day, plus 7-day streak bonus +5.
-        # Lv.10 target: 15 days; Lv.20 target: 20 days.
-        xp_15_days = 15 * DAILY_EFFECTIVE_XP_AT_10_MSG + (15 // STREAK_PERIOD_DAYS) * STREAK_BONUS_XP
-        xp_20_days = 20 * DAILY_EFFECTIVE_XP_AT_10_MSG + (20 // STREAK_PERIOD_DAYS) * STREAK_BONUS_XP
-
-        self.assertEqual(required_total_xp_for_level(10), xp_15_days)
-        self.assertEqual(required_total_xp_for_level(20), xp_20_days)
+        # Power curve: 3 * (level-1)^1.3
+        # Lv.2 -> 3 XP, Lv.10 -> ~44 XP, Lv.20 -> ~110 XP
+        self.assertEqual(required_total_xp_for_level(1), 0)
+        self.assertEqual(required_total_xp_for_level(2), 3)
+        self.assertEqual(required_total_xp_for_level(10), int(3.0 * 9 ** 1.3))
+        self.assertEqual(required_total_xp_for_level(20), int(3.0 * 19 ** 1.3))
 
     def test_streak_bonus(self) -> None:
         self.assertFalse(should_award_streak_bonus(6))

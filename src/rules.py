@@ -8,12 +8,13 @@ TIER_REWARDS = (1, 2, 3, 4, 5)
 MAX_LEVEL = 114
 MIN_LEVEL = 1
 
-# Rebalanced pace target:
-# daily effective messages = 10
-# Lv.10 ~= 15 days, Lv.20 ~= 20 days, and so on.
+# Level curve: 3 * (level-1)^1.3  (Lv.2 ~3 XP, Lv.10 ~44 XP, Lv.20 ~110 XP)
 DAILY_EFFECTIVE_XP_AT_10_MSG = 3
 STREAK_PERIOD_DAYS = 7
 STREAK_BONUS_XP = 5
+
+_CURVE_SCALE = 3.0
+_CURVE_EXP = 1.3
 
 
 @dataclass(frozen=True)
@@ -54,12 +55,7 @@ def required_total_xp_for_level(level: int) -> int:
     bounded = max(MIN_LEVEL, min(MAX_LEVEL, level))
     if bounded <= MIN_LEVEL:
         return 0
-
-    # Days target: Lv.10 -> 15 days, Lv.20 -> 20 days, linear by level.
-    days_target = 10.0 + 0.5 * bounded
-    base_xp = int(days_target * DAILY_EFFECTIVE_XP_AT_10_MSG)
-    streak_bonus = int(days_target // STREAK_PERIOD_DAYS) * STREAK_BONUS_XP
-    return base_xp + streak_bonus
+    return int(_CURVE_SCALE * (bounded - 1) ** _CURVE_EXP)
 
 
 def level_from_total_xp(total_xp: int) -> int:
