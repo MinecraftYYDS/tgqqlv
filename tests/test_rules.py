@@ -123,6 +123,50 @@ class RulesTests(unittest.TestCase):
         self.assertNotIn("alice", output)
         self.assertNotIn("user_2", output)
 
+    def test_rank_hides_placeholder_user_prefix_name(self) -> None:
+        db = DB(":memory:")
+        db.init_schema()
+        service = XpService(db=db, tg=Mock(), top_n=10)
+
+        db.get_or_create_user(
+            chat_id=1001,
+            user_id=1,
+            username="alice",
+            display_name="Alice",
+            now_ts=1,
+        )
+        db.get_or_create_user(
+            chat_id=1001,
+            user_id=7828040745,
+            username=None,
+            display_name="user_7828040745",
+            now_ts=1,
+        )
+
+        db.apply_xp_and_level(
+            chat_id=1001,
+            user_id=1,
+            xp_delta=10,
+            new_level=2,
+            now_ts=2,
+            biz_date="2026-05-03",
+            reason="test",
+        )
+        db.apply_xp_and_level(
+            chat_id=1001,
+            user_id=7828040745,
+            xp_delta=50,
+            new_level=5,
+            now_ts=2,
+            biz_date="2026-05-03",
+            reason="test",
+        )
+
+        output = service._render_rank(chat_id=1001, caller_id=1)
+
+        self.assertIn("Alice", output)
+        self.assertNotIn("user_7828040745", output)
+
 
 if __name__ == "__main__":
     unittest.main()

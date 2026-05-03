@@ -361,6 +361,7 @@ class DB:
             WHERE chat_id=?
                             AND display_name IS NOT NULL
                             AND TRIM(display_name) != ''
+                              AND TRIM(display_name) NOT LIKE 'user\\_%' ESCAPE '\\'
             ORDER BY total_xp DESC, user_id ASC
             LIMIT ?
             """,
@@ -378,6 +379,7 @@ class DB:
                 WHERE chat_id=?
                                     AND display_name IS NOT NULL
                                     AND TRIM(display_name) != ''
+                                      AND TRIM(display_name) NOT LIKE 'user\\_%' ESCAPE '\\'
             )
             SELECT * FROM ranked WHERE user_id=?
             """,
