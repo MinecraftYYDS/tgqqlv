@@ -15,6 +15,22 @@ from .telegram_api import TelegramAPI, TelegramAPIError
 from .time_utils import biz_date_str, epoch_seconds
 
 
+_HEADER_TOKENS = {
+    "id",
+    "user_id",
+    "userid",
+    "chat_id",
+    "chatid",
+    "xp",
+    "score",
+    "points",
+    "amount",
+    "积分",
+    "积分数",
+    "积分数量",
+}
+
+
 def setup_logging(level: str) -> None:
     logging.basicConfig(
         level=getattr(logging, level, logging.INFO),
@@ -68,6 +84,15 @@ def _parse_integer_token(token: str, name: str, line_no: int) -> int:
     return int(m.group(1))
 
 
+def _is_header_like_tokens(tokens: list[str]) -> bool:
+    if len(tokens) not in {2, 3}:
+        return False
+    normalized = [re.sub(r"[^\w\u4e00-\u9fff]", "", t).lower() for t in tokens]
+    if not all(normalized):
+        return False
+    return all(t in _HEADER_TOKENS for t in normalized)
+
+
 def _load_add_entries(file_path: Path, default_chat_id: int | None, encoding: str) -> list[tuple[int, int, int]]:
     if not file_path.exists() or not file_path.is_file():
         raise ValueError(f"导入文件不存在: {file_path}")
@@ -81,6 +106,8 @@ def _load_add_entries(file_path: Path, default_chat_id: int | None, encoding: st
             continue
 
         tokens = [t for t in re.split(r"[\s,]+", line) if t]
+        if _is_header_like_tokens(tokens):
+            continue
         try:
             if len(tokens) == 2:
                 if default_chat_id is None:
@@ -215,28 +242,39 @@ def _run_batch_import(args: argparse.Namespace) -> None:
 
     is_delete = bool(args.del_file)
     input_file = args.del_file if is_delete else args.add_file
-    entries = _load_add_entries(
-        file_path=Path(input_file),
-        default_chat_id=args.chat_id,
-        encoding=args.encoding,
-    )
-
-    db = DB(db_path)
-    db.init_schema()
-
-    reason = args.reason
-    if reason == "manual_import":
-        reason = "manual_deduct" if is_delete else "manual_import"
-
-    summary = _apply_entries(
-        db,
-        entries,
-        reason=reason,
-        dry_run=bool(args.dry_run),
-        is_delete=is_delete,
-    )
-    mode_text = "dry-run" if args.dry_run else "applied"
     action_text = "del" if is_delete else "add"
+
+    try:
+        entries = _load_add_entries(
+            file_path=Path(input_file),
+            default_chat_id=args.chat_id,
+            encoding=args.encoding,
+        )
+
+        db = DB(db_path)
+        db.init_schema()
+
+        reason = args.reason
+        if reason == "manual_import":
+            reason = "manual_deduct" if is_delete else "manual_import"
+
+        summary = _apply_entries(
+            db,
+            entries,
+            reason=reason,
+            dry_run=bool(args.dry_run),
+            is_delete=is_delete,
+        )
+    except UnicodeDecodeError as exc:
+        logger.error("批量%s失败：文件编码不匹配 (%s)。可尝试 --encoding gbk", action_text, exc)
+        raise SystemExit(2)
+    except ValueError as exc:
+        logger.error("批量%s失败：\n%s", action_text, exc)
+        logger.error("示例(两列): 12345678 10  (需配合 --chat-id)")
+        logger.error("示例(三列): -1001234567890 12345678 10")
+        raise SystemExit(2)
+
+    mode_text = "dry-run" if args.dry_run else "applied"
     logger.info(
         "Batch %s %s: rows=%s users=%s created=%s skipped=%s leveled_up=%s leveled_down=%s requested_xp=%s applied_xp=%s reason=%s db=%s",
         action_text,

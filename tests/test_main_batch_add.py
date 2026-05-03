@@ -9,6 +9,14 @@ from src.main import _apply_entries, _load_add_entries
 
 
 class MainBatchAddTests(unittest.TestCase):
+    def test_load_add_entries_skips_header_like_line(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "batch.txt"
+            p.write_text("id 积分数量\n101 5\n", encoding="utf-8")
+
+            rows = _load_add_entries(p, default_chat_id=-10001, encoding="utf-8")
+            self.assertEqual(rows, [(-10001, 101, 5)])
+
     def test_load_add_entries_with_default_chat_id(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "batch.txt"
