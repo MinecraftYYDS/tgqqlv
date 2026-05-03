@@ -78,6 +78,51 @@ class RulesTests(unittest.TestCase):
         self.assertEqual(service._progress_bar(0.5, width=10), "[#####-----]")
         self.assertEqual(service._progress_bar(1.0, width=10), "[##########]")
 
+    def test_rank_uses_display_name_and_hides_empty_nickname(self) -> None:
+        db = DB(":memory:")
+        db.init_schema()
+        service = XpService(db=db, tg=Mock(), top_n=10)
+
+        db.get_or_create_user(
+            chat_id=1001,
+            user_id=1,
+            username="alice",
+            display_name="Alice",
+            now_ts=1,
+        )
+        db.get_or_create_user(
+            chat_id=1001,
+            user_id=2,
+            username=None,
+            display_name="",
+            now_ts=1,
+        )
+
+        db.apply_xp_and_level(
+            chat_id=1001,
+            user_id=1,
+            xp_delta=10,
+            new_level=2,
+            now_ts=2,
+            biz_date="2026-05-03",
+            reason="test",
+        )
+        db.apply_xp_and_level(
+            chat_id=1001,
+            user_id=2,
+            xp_delta=50,
+            new_level=5,
+            now_ts=2,
+            biz_date="2026-05-03",
+            reason="test",
+        )
+
+        output = service._render_rank(chat_id=1001, caller_id=1)
+
+        self.assertIn("Alice", output)
+        self.assertNotIn("alice", output)
+        self.assertNotIn("user_2", output)
+
 
 if __name__ == "__main__":
     unittest.main()

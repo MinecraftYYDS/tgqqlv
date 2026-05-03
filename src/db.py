@@ -359,6 +359,8 @@ class DB:
                    ROW_NUMBER() OVER (ORDER BY total_xp DESC, user_id ASC) AS rank
             FROM users
             WHERE chat_id=?
+                            AND display_name IS NOT NULL
+                            AND TRIM(display_name) != ''
             ORDER BY total_xp DESC, user_id ASC
             LIMIT ?
             """,
@@ -374,6 +376,8 @@ class DB:
                        ROW_NUMBER() OVER (ORDER BY total_xp DESC, user_id ASC) AS rank
                 FROM users
                 WHERE chat_id=?
+                                    AND display_name IS NOT NULL
+                                    AND TRIM(display_name) != ''
             )
             SELECT * FROM ranked WHERE user_id=?
             """,

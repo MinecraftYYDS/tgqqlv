@@ -99,7 +99,7 @@ class XpService:
         for row in rows:
             rank = int(row["rank"])
             uid = int(row["user_id"])
-            name = self._rank_username(row)
+            name = self._rank_display_name(row)
             level = int(row["level"])
             xp = int(row["total_xp"])
             title = self._db.find_level_title(chat_id, level)
@@ -115,7 +115,7 @@ class XpService:
             if self_row:
                 lines.append("---")
                 rank = int(self_row["rank"])
-                name = self._rank_username(self_row)
+                name = self._rank_display_name(self_row)
                 level = int(self_row["level"])
                 xp = int(self_row["total_xp"])
                 title = self._db.find_level_title(chat_id, level)
@@ -126,12 +126,11 @@ class XpService:
 
         return "\n".join(lines)
 
-    def _rank_username(self, row: Any) -> str:
-        username = row["username"]
-        if isinstance(username, str) and username.strip():
-            return username.strip()
-        user_id = int(row["user_id"])
-        return f"user_{user_id}"
+    def _rank_display_name(self, row: Any) -> str:
+        display_name = row["display_name"]
+        if isinstance(display_name, str):
+            return display_name.strip()
+        return ""
 
     def _message_id_from_result(self, sent: dict[str, Any]) -> int | None:
         mid = sent.get("message_id")
