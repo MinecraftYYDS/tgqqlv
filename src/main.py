@@ -24,11 +24,18 @@ def setup_logging(level: str) -> None:
 
 def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Telegram 群 XP 等级系统")
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "-add",
         "--add",
         dest="add_file",
         help="批量加分文件路径，支持两列(user_id xp)或三列(chat_id user_id xp)",
+    )
+    mode.add_argument(
+        "-del",
+        "--del",
+        dest="del_file",
+        help="批量扣分文件路径，支持两列(user_id xp)或三列(chat_id user_id xp)",
     )
     parser.add_argument(
         "--chat-id",
@@ -110,22 +117,39 @@ def _load_add_entries(file_path: Path, default_chat_id: int | None, encoding: st
     return entries
 
 
-def _apply_add_entries(db: DB, entries: list[tuple[int, int, int]], reason: str, dry_run: bool) -> dict[str, int]:
+def _apply_entries(
+    db: DB,
+    entries: list[tuple[int, int, int]],
+    reason: str,
+    dry_run: bool,
+    is_delete: bool,
+) -> dict[str, int]:
     now_ts = epoch_seconds()
     biz_date = biz_date_str()
 
     summary = {
         "rows": len(entries),
         "total_xp": 0,
+        "requested_total_xp": 0,
         "affected_users": 0,
         "created_users": 0,
         "leveled_up_users": 0,
+        "leveled_down_users": 0,
+        "skipped_users": 0,
     }
     seen_users: set[tuple[int, int]] = set()
 
-    for chat_id, user_id, xp_delta in entries:
+    sign = -1 if is_delete else 1
+
+    for chat_id, user_id, amount in entries:
+        xp_delta = sign * amount
+        summary["requested_total_xp"] += amount
         user = db.get_user(chat_id, user_id)
         if user is None:
+            if is_delete:
+                summary["skipped_users"] += 1
+                continue
+
             summary["created_users"] += 1
             if not dry_run:
                 db.get_or_create_user(
@@ -141,10 +165,17 @@ def _apply_add_entries(db: DB, entries: list[tuple[int, int, int]], reason: str,
 
         old_level = user.level if user is not None else 1
         old_total_xp = user.total_xp if user is not None else 0
-        new_level = level_from_total_xp(old_total_xp + xp_delta)
+        target_total_xp = old_total_xp + xp_delta
+        if target_total_xp < 0:
+            target_total_xp = 0
+        new_level = level_from_total_xp(target_total_xp)
+
+        applied_delta = xp_delta
+        if target_total_xp == old_total_xp:
+            applied_delta = 0
 
         if not dry_run:
-            db.apply_xp_and_level(
+            applied_delta = db.apply_xp_delta_and_level(
                 chat_id=chat_id,
                 user_id=user_id,
                 xp_delta=xp_delta,
@@ -154,16 +185,21 @@ def _apply_add_entries(db: DB, entries: list[tuple[int, int, int]], reason: str,
                 reason=reason,
             )
 
-        summary["total_xp"] += xp_delta
+        if applied_delta == 0:
+            continue
+
+        summary["total_xp"] += applied_delta
         seen_users.add((chat_id, user_id))
         if new_level > old_level:
             summary["leveled_up_users"] += 1
+        elif new_level < old_level:
+            summary["leveled_down_users"] += 1
 
     summary["affected_users"] = len(seen_users)
     return summary
 
 
-def _run_batch_add(args: argparse.Namespace) -> None:
+def _run_batch_import(args: argparse.Namespace) -> None:
     log_level = "INFO"
     db_path = "xp_bot.sqlite3"
     try:
@@ -177,8 +213,10 @@ def _run_batch_add(args: argparse.Namespace) -> None:
     setup_logging(log_level)
     logger = logging.getLogger(__name__)
 
+    is_delete = bool(args.del_file)
+    input_file = args.del_file if is_delete else args.add_file
     entries = _load_add_entries(
-        file_path=Path(args.add_file),
+        file_path=Path(input_file),
         default_chat_id=args.chat_id,
         encoding=args.encoding,
     )
@@ -186,17 +224,32 @@ def _run_batch_add(args: argparse.Namespace) -> None:
     db = DB(db_path)
     db.init_schema()
 
-    summary = _apply_add_entries(db, entries, reason=args.reason, dry_run=bool(args.dry_run))
+    reason = args.reason
+    if reason == "manual_import":
+        reason = "manual_deduct" if is_delete else "manual_import"
+
+    summary = _apply_entries(
+        db,
+        entries,
+        reason=reason,
+        dry_run=bool(args.dry_run),
+        is_delete=is_delete,
+    )
     mode_text = "dry-run" if args.dry_run else "applied"
+    action_text = "del" if is_delete else "add"
     logger.info(
-        "Batch add %s: rows=%s users=%s created=%s leveled_up=%s total_xp=%s reason=%s db=%s",
+        "Batch %s %s: rows=%s users=%s created=%s skipped=%s leveled_up=%s leveled_down=%s requested_xp=%s applied_xp=%s reason=%s db=%s",
+        action_text,
         mode_text,
         summary["rows"],
         summary["affected_users"],
         summary["created_users"],
+        summary["skipped_users"],
         summary["leveled_up_users"],
+        summary["leveled_down_users"],
+        summary["requested_total_xp"],
         summary["total_xp"],
-        args.reason,
+        reason,
         db_path,
     )
 
@@ -236,7 +289,7 @@ def run() -> None:
 
 if __name__ == "__main__":
     cli_args = _parse_args()
-    if cli_args.add_file:
-        _run_batch_add(cli_args)
+    if cli_args.add_file or cli_args.del_file:
+        _run_batch_import(cli_args)
     else:
         run()

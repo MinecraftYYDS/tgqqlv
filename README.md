@@ -52,6 +52,12 @@ python -m src.main
 python -m src.main -add add_xp.txt --chat-id -1001234567890
 ```
 
+批量扣分用法（同一文件格式）：
+
+```bash
+python -m src.main -del del_xp.txt --chat-id -1001234567890
+```
+
 文件格式（推荐两列，配合 `--chat-id` 使用）：
 
 ```text
@@ -72,7 +78,9 @@ python -m src.main -add add_xp.txt --chat-id -1001234567890
 说明：
 - 空行和 `#` 开头行会被忽略。
 - 分隔符支持空格、Tab 或逗号。
-- 仅允许正整数 XP（加分场景）。
+- 文件中的 XP 仅允许正整数；`-add` 表示加分，`-del` 表示按该数值扣分。
+- `-del` 扣分不会把 XP 扣到 0 以下；会自动重算等级（可能降级）。
+- `-del` 遇到不存在的用户会跳过并统计为 skipped。
 - 可加 `--dry-run` 先校验不落库；可用 `--reason custom_reason` 自定义日志原因。
 
 ## 4. 指令

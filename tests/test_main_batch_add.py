@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from src.db import DB
-from src.main import _apply_add_entries, _load_add_entries
+from src.main import _apply_entries, _load_add_entries
 
 
 class MainBatchAddTests(unittest.TestCase):
@@ -46,11 +46,12 @@ class MainBatchAddTests(unittest.TestCase):
             now_ts=0,
         )
 
-        summary = _apply_add_entries(
+        summary = _apply_entries(
             db,
             entries=[(-10001, 101, 10), (-10001, 202, 8)],
             reason="manual_import",
             dry_run=False,
+            is_delete=False,
         )
 
         self.assertEqual(summary["rows"], 2)
@@ -64,6 +65,42 @@ class MainBatchAddTests(unittest.TestCase):
         self.assertIsNotNone(user2)
         self.assertEqual(user1.total_xp, 10)
         self.assertEqual(user2.total_xp, 8)
+
+    def test_apply_del_entries_clamps_to_zero_and_levels_down(self) -> None:
+        db = DB(":memory:")
+        db.init_schema()
+
+        db.get_or_create_user(
+            chat_id=-10001,
+            user_id=101,
+            username="alice",
+            display_name="Alice",
+            now_ts=0,
+        )
+        _apply_entries(
+            db,
+            entries=[(-10001, 101, 15)],
+            reason="seed",
+            dry_run=False,
+            is_delete=False,
+        )
+
+        summary = _apply_entries(
+            db,
+            entries=[(-10001, 101, 100), (-10001, 999, 5)],
+            reason="manual_deduct",
+            dry_run=False,
+            is_delete=True,
+        )
+
+        self.assertEqual(summary["requested_total_xp"], 105)
+        self.assertEqual(summary["total_xp"], -15)
+        self.assertEqual(summary["skipped_users"], 1)
+
+        user = db.get_user(-10001, 101)
+        self.assertIsNotNone(user)
+        self.assertEqual(user.total_xp, 0)
+        self.assertEqual(user.level, 1)
 
 
 if __name__ == "__main__":

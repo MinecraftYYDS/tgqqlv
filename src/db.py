@@ -248,6 +248,56 @@ class DB:
         )
         self._conn.commit()
 
+    def apply_xp_delta_and_level(
+        self,
+        chat_id: int,
+        user_id: int,
+        xp_delta: int,
+        new_level: int,
+        now_ts: int,
+        biz_date: str,
+        reason: str,
+    ) -> int:
+        """Apply signed xp_delta and set level exactly; returns applied delta (may be clamped)."""
+        if xp_delta == 0:
+            return 0
+
+        row = self._conn.execute(
+            "SELECT total_xp FROM users WHERE chat_id=? AND user_id=?",
+            (chat_id, user_id),
+        ).fetchone()
+        if not row:
+            return 0
+
+        current_xp = int(row["total_xp"])
+        target_xp = current_xp + int(xp_delta)
+        if target_xp < 0:
+            target_xp = 0
+
+        applied_delta = target_xp - current_xp
+        if applied_delta == 0:
+            return 0
+
+        self._conn.execute(
+            """
+            UPDATE users
+            SET total_xp = ?,
+                level = ?,
+                updated_at = ?
+            WHERE chat_id=? AND user_id=?
+            """,
+            (target_xp, new_level, now_ts, chat_id, user_id),
+        )
+        self._conn.execute(
+            """
+            INSERT INTO xp_logs(chat_id, user_id, biz_date, xp_delta, reason, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (chat_id, user_id, biz_date, applied_delta, reason, now_ts),
+        )
+        self._conn.commit()
+        return applied_delta
+
     def update_streak(self, chat_id: int, user_id: int, streak_days: int, qualified_date: str | None, now_ts: int) -> None:
         self._conn.execute(
             """
